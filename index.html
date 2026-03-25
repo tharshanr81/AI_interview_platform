@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Interview Reviewer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.6.1/firebase-auth-compat.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a1a2e;
+            color: #ffffff;
+        }
+        .container {
+            max-width: 1200px;
+            margin: auto;
+        }
+        video {
+            border-radius: 1rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            border: 2px solid #5a5f70;
+            background-color: #0d0d1a;
+        }
+        .prompt-input {
+            transition: all 0.3s ease-in-out;
+            outline: none;
+        }
+        .prompt-input:focus {
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.5);
+            border-color: #6366f1;
+        }
+        .btn {
+            transition: all 0.2s ease-in-out;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 14px 0 rgba(0,0,0,0.2);
+        }
+        .btn:active {
+            transform: translateY(0);
+            box-shadow: none;
+        }
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid #fff;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 flex items-center justify-center min-h-screen p-4">
+
+    <div class="container bg-gray-800 p-8 rounded-2xl shadow-2xl">
+        <h1 class="text-4xl font-bold text-center mb-6 text-indigo-400">AI Interview Reviewer</h1>
+        <p class="text-center text-gray-400 mb-8">Practice your interview skills with a virtual HR powered by Gemini!</p>
+        
+        <!-- User ID Display -->
+        <div class="mb-4 text-center text-sm text-gray-500">
+            User ID: <span id="user-id" class="font-mono text-gray-400">Loading...</span>
+        </div>
+
+        <div id="setup-section" class="flex flex-col items-center mb-8 space-y-4">
+            <input type="text" id="job-role-input" class="prompt-input w-full md:w-1/2 p-3 text-gray-900 bg-gray-200 rounded-lg placeholder-gray-500" placeholder="e.g., 'Software Engineer'">
+            <input type="text" id="api-key-input" class="prompt-input w-full md:w-1/2 p-3 text-gray-900 bg-gray-200 rounded-lg placeholder-gray-500" placeholder="Enter your Gemini API key">
+            <button id="start-btn" class="btn bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-8 rounded-lg shadow-md transition duration-300 ease-in-out">
+                Start Interview
+            </button>
+            <p class="text-xs text-gray-400 mt-2">
+                Don't have a key? Get your <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-indigo-400 hover:underline">Gemini API key for free from Google AI Studio</a>.
+            </p>
+        </div>
+
+        <div id="interview-section" class="hidden flex flex-col md:flex-row space-y-6 md:space-y-0 md:space-x-6">
+            <!-- Video and Status Panel -->
+            <div class="flex-1 flex flex-col items-center">
+                <div class="relative w-full h-auto max-w-lg mb-4">
+                    <video id="webcam-video" autoplay playsinline class="w-full h-auto rounded-lg border-2 border-indigo-500"></video>
+                    <div class="absolute top-4 left-4 bg-gray-900 text-white text-sm px-3 py-1 rounded-full opacity-80 flex items-center space-x-2">
+                        <span id="status-display">Initializing...</span>
+                        <span id="timer-display" class="hidden font-mono">00:00</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Transcript and Review Panel -->
+            <div class="flex-1 bg-gray-700 p-6 rounded-lg shadow-inner flex flex-col">
+                <h2 class="text-2xl font-bold mb-4 text-center text-indigo-300">Interview Transcript</h2>
+                <div id="transcript-container" class="flex-1 overflow-y-auto max-h-96 text-gray-200 text-sm leading-relaxed p-4 bg-gray-900 rounded-lg shadow-inner">
+                    <p class="text-center text-gray-500">The interview transcript will appear here.</p>
+                </div>
+                
+                <div id="review-container" class="hidden mt-6">
+                    <h2 class="text-2xl font-bold mb-4 text-center text-green-300">Instant Review</h2>
+                    <div id="rating-display" class="text-center text-5xl font-bold mb-4 text-green-400"></div>
+                    <div id="review-text" class="bg-gray-900 p-4 rounded-lg text-gray-200 text-sm"></div>
+                </div>
+
+                <div class="flex justify-center mt-6">
+                    <button id="stop-btn" class="btn bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-8 rounded-lg shadow-md transition duration-300 ease-in-out hidden">
+                        Stop Interview
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading Modal -->
+        <div id="loading-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center hidden">
+            <div class="flex flex-col items-center bg-gray-800 p-8 rounded-lg shadow-xl">
+                <div class="spinner border-indigo-400 border-t-indigo-600"></div>
+                <p class="mt-4 text-lg font-semibold text-indigo-300">Please wait, starting interview...</p>
+            </div>
+        </div>
+
+    </div>
+
+    <script type="module">
+        // Import Firebase components
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+
+        // --- GLOBAL VARIABLES ---
+        let apiKey;
+        let ttsApiUrl;
+        
+        // Use a variable to store the current text model and its API URL
+        let currentTextModel = 'gemini-flash-latest';
+        let textApiUrl;
+
+        let app;
+        let auth;
+        let userId = 'default-user-id';
+        let speechRecognition;
+        let jobRole = '';
+        let interviewHistory = [];
+        let interviewStarted = false;
+        let currentPrompt = "";
+        let interviewStartTime = null;
+        let timerInterval = null;
+        const INTERVIEW_DURATION_MS = 5 * 60 * 1000; // 5 minutes
+
+        // Caching for the next question
+        let nextQuestionCache = null;
+
+        // --- DOM Elements ---
+        const startBtn = document.getElementById('start-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        const jobRoleInput = document.getElementById('job-role-input');
+        const apiKeyInput = document.getElementById('api-key-input');
+        const setupSection = document.getElementById('setup-section');
+        const interviewSection = document.getElementById('interview-section');
+        const webcamVideo = document.getElementById('webcam-video');
+        const transcriptContainer = document.getElementById('transcript-container');
+        const reviewContainer = document.getElementById('review-container');
+        const reviewText = document.getElementById('review-text');
+        const ratingDisplay = document.getElementById('rating-display');
+        const statusDisplay = document.getElementById('status-display');
+        const timerDisplay = document.getElementById('timer-display');
+        const loadingModal = document.getElementById('loading-modal');
+        const userIdSpan = document.getElementById('user-id');
+
+        // --- Utility Functions ---
+        /**
+         * Converts a base64 string to an ArrayBuffer.
+         */
+        const base64ToArrayBuffer = (base64String) => {
+            const binaryString = atob(base64String);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        };
+
+        /**
+         * Converts PCM 16-bit audio data to a WAV Blob.
+         */
+        const pcmToWav = (pcmData, sampleRate) => {
+            const buffer = new ArrayBuffer(44 + pcmData.length * 2);
+            const view = new DataView(buffer);
+            writeString(view, 0, 'RIFF');
+            view.setUint32(4, 36 + pcmData.length * 2, true);
+            writeString(view, 8, 'WAVE');
+            writeString(view, 12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true); // Audio format (1 = PCM)
+            view.setUint16(22, 1, true); // Number of channels
+            view.setUint32(24, sampleRate, true); // Sample rate
+            view.setUint32(28, sampleRate * 2, true); // Byte rate
+            view.setUint16(32, 2, true); // Block align
+            view.setUint16(34, 16, true); // Bits per sample
+            writeString(view, 36, 'data');
+            view.setUint32(40, pcmData.length * 2, true);
+            let offset = 44;
+            for (let i = 0; i < pcmData.length; i++) {
+                view.setInt16(offset, pcmData[i], true);
+                offset += 2;
+            }
+            return new Blob([view], { type: 'audio/wav' });
+        };
+
+        const writeString = (view, offset, string) => {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+            }
+        };
+        
+        const playAudioFromBase64 = (base64Audio) => {
+            return new Promise((resolve, reject) => {
+                try {
+                    const pcmData = new Int16Array(base64ToArrayBuffer(base64Audio));
+                    const sampleRate = 24000;
+                    const wavBlob = pcmToWav(pcmData, sampleRate);
+                    const audioUrl = URL.createObjectURL(wavBlob);
+                    const audio = new Audio(audioUrl);
+                    
+                    audio.onended = () => {
+                        URL.revokeObjectURL(audioUrl);
+                        resolve();
+                    };
+                    audio.onerror = (e) => {
+                        console.error("Audio playback error:", e);
+                        URL.revokeObjectURL(audioUrl);
+                        reject(new Error("Audio playback failed."));
+                    };
+                    audio.play();
+                } catch (error) {
+                    reject(error);
+                }
+            });
+        };
+
+        const updateStatus = (message, isLoading = false) => {
+            statusDisplay.textContent = message;
+            if (isLoading) {
+                statusDisplay.classList.add('bg-indigo-600');
+                statusDisplay.classList.remove('bg-gray-900');
+            } else {
+                statusDisplay.classList.remove('bg-indigo-600');
+                statusDisplay.classList.add('bg-gray-900');
+            }
+        };
+
+        const updateTimerDisplay = () => {
+            if (!interviewStartTime) return;
+            const elapsedMs = Date.now() - interviewStartTime;
+            const minutes = Math.floor(elapsedMs / 60000);
+            const seconds = Math.floor((elapsedMs % 60000) / 1000);
+            timerDisplay.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        };
+
+        const appendToTranscript = (speaker, text) => {
+            const p = document.createElement('p');
+            p.innerHTML = `<span class="font-bold">${speaker}:</span> ${text}`;
+            transcriptContainer.appendChild(p);
+            transcriptContainer.scrollTop = transcriptContainer.scrollHeight;
+        };
+
+        const callApiWithBackoff = async (payload, url, retries = 5) => {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    if (response.status === 403) {
+                         throw new Error("403 Forbidden: API key is likely invalid or missing permissions. Please check your API key configuration.");
+                    }
+                    
+                    if (response.status === 404) {
+                        if (currentTextModel === 'gemini-pro') {
+                            currentTextModel = 'gemini-2.5-flash-preview-05-20';
+                            textApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${currentTextModel}:generateContent?key=${apiKey}`;
+                            console.warn("API call failed with 404. Switching to fallback model:", currentTextModel);
+                            // Retry with the new model immediately
+                            return await callApiWithBackoff(payload, textApiUrl, retries);
+                        } else {
+                             throw new Error(`API call failed with status: 404. Model '${currentTextModel}' not found.`);
+                        }
+                    }
+
+                    if (response.ok) {
+                        return await response.json();
+                    }
+
+                    if (response.status === 429 && i < retries - 1) {
+                        const delay = Math.pow(3, i) * 1000;
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        continue;
+                    }
+                    throw new Error(`API call failed with status: ${response.status}`);
+
+                } catch (error) {
+                    if (i === retries - 1) throw error;
+                    const delay = Math.pow(3, i) * 1000;
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
+        };
+
+        // --- Main Interview Logic ---
+        const getMedia = async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                webcamVideo.srcObject = stream;
+                updateStatus('Camera and microphone ready.');
+                await new Promise(resolve => webcamVideo.onloadedmetadata = resolve); // Wait for video to load
+                return stream;
+            } catch (error) {
+                console.error("Error accessing media devices.", error);
+                throw new Error("Could not access camera and microphone. Please check your permissions.");
+            }
+        };
+        
+        /**
+         * Fetches and caches the next question and its audio.
+         */
+        const preFetchNextQuestion = async (context = "") => {
+            if (!interviewStarted) return;
+            const prompt = `You are a professional HR interviewer. Ask the user a single, relevant interview question for a ${jobRole} position. Your questions should be natural, concise, and lead a conversation. The user's previous answer was: "${context}". Do not include greetings or a closing remark. Just ask the question.`;
+            const chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+            const payload = { contents: chatHistory };
+
+            const ttsPayload = {
+                contents: [{ parts: [{ text: `` }] }], // Text will be filled in later
+                generationConfig: {
+                    responseModalities: ["AUDIO"],
+                    speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } }
+                },
+                model: "gemini-2.5-flash-preview-tts"
+            };
+
+            try {
+                // Get question text
+                const textResult = await callApiWithBackoff(payload, textApiUrl);
+                const questionText = textResult?.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (!questionText) throw new Error("Failed to get question text from API.");
+
+                // Get TTS audio for the question text
+                ttsPayload.contents[0].parts[0].text = `Say in an informative tone: ${questionText}`;
+                const ttsResult = await callApiWithBackoff(ttsPayload, ttsApiUrl);
+                const audioData = ttsResult?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+                if (!audioData) throw new Error("Failed to get TTS audio from API.");
+
+                nextQuestionCache = { questionText, audioData };
+                console.log("Next question pre-fetched successfully.");
+
+            } catch (error) {
+                console.error("Error pre-fetching next question:", error);
+                nextQuestionCache = null;
+            }
+        };
+
+        const askQuestion = async (context = "") => {
+            if (!interviewStarted) return;
+            if (Date.now() - interviewStartTime >= INTERVIEW_DURATION_MS) {
+                await endInterview();
+                return;
+            }
+
+            updateStatus('HR is speaking...', true);
+            let questionText, audioData;
+
+            if (nextQuestionCache) {
+                questionText = nextQuestionCache.questionText;
+                audioData = nextQuestionCache.audioData;
+                nextQuestionCache = null;
+            } else {
+                // Fallback to live fetching if cache is empty
+                const prompt = `You are a professional HR interviewer. Ask the user a single, relevant interview question for a ${jobRole} position. Your questions should be natural, concise, and lead a conversation. The user's previous answer was: "${context}". Do not include greetings or a closing remark. Just ask the question.`;
+                const chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+                const payload = { contents: chatHistory };
+                
+                try {
+                    const result = await callApiWithBackoff(payload, textApiUrl);
+                    questionText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (!questionText) throw new Error("Failed to get question text from API.");
+
+                    const ttsPayload = {
+                        contents: [{ parts: [{ text: `Say in an informative tone: ${questionText}` }] }],
+                        generationConfig: {
+                            responseModalities: ["AUDIO"],
+                            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } }
+                        },
+                        model: "gemini-2.5-flash-preview-tts"
+                    };
+                    const ttsResult = await callApiWithBackoff(ttsPayload, ttsApiUrl);
+                    audioData = ttsResult?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+                    if (!audioData) throw new Error("Failed to get TTS audio from API.");
+                } catch (error) {
+                    console.error("Error asking question:", error);
+                    alert(`Error: ${error.message}`);
+                    stopInterview();
+                    return;
+                }
+            }
+
+            appendToTranscript('HR', questionText);
+            currentPrompt = questionText;
+            interviewHistory.push({ role: 'hr', text: questionText });
+
+            await playAudioFromBase64(audioData);
+            
+            if (interviewStarted) {
+                listenForAnswer();
+                // Start pre-fetching the next question while the user is answering
+                preFetchNextQuestion(currentPrompt);
+            }
+        };
+
+        const listenForAnswer = () => {
+            if (!interviewStarted) return;
+            if (Date.now() - interviewStartTime >= INTERVIEW_DURATION_MS) {
+                endInterview();
+                return;
+            }
+            
+            updateStatus('Listening...', true);
+            if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
+                speechRecognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+                speechRecognition.lang = 'en-US';
+                speechRecognition.continuous = false;
+                speechRecognition.interimResults = false;
+                
+                speechRecognition.onresult = (event) => {
+                    const transcript = Array.from(event.results)
+                        .map(result => result[0])
+                        .map(result => result.transcript)
+                        .join('');
+                    
+                    if (transcript) {
+                        appendToTranscript('You', transcript);
+                        interviewHistory.push({ role: 'user', text: transcript });
+                        askQuestion(transcript);
+                    }
+                };
+                
+                speechRecognition.onend = () => {};
+
+                speechRecognition.onerror = (event) => {
+                    console.error("Speech recognition error:", event.error);
+                    updateStatus('Listening...', true);
+                };
+
+                speechRecognition.start();
+            } else {
+                alert("Your browser does not support Web Speech API. Please use Google Chrome.");
+                stopInterview();
+            }
+        };
+
+        const endInterview = async () => {
+            interviewStarted = false;
+            if (speechRecognition) speechRecognition.stop();
+            stopBtn.classList.add('hidden');
+            clearInterval(timerInterval);
+            timerDisplay.classList.add('hidden');
+            updateStatus('Reviewing interview...', true);
+
+            const prompt = `Based on the following interview transcript, please provide a comprehensive and constructive review for the candidate applying for a ${jobRole} role. After the review, on a new line, provide a single, final rating out of 10. The rating MUST be formatted as: 'Rating: X/10'.
+            Transcript:
+            ${interviewHistory.map(item => `${item.role === 'hr' ? 'HR' : 'Candidate'}: ${item.text}`).join('\n')}`;
+
+            const chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+            const payload = { contents: chatHistory };
+            
+            try {
+                const result = await callApiWithBackoff(payload, textApiUrl);
+                const fullReview = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+                
+                if (fullReview) {
+                    let reviewTextContent = fullReview;
+                    let rating = 'N/A';
+                    
+                    const lines = fullReview.split('\n');
+                    const ratingLine = lines.find(line => line.startsWith('Rating:'));
+
+                    if (ratingLine) {
+                        const ratingMatch = ratingLine.match(/Rating: (\d+\.?\d*)\/10/);
+                        if (ratingMatch) {
+                            rating = ratingMatch[1];
+                        }
+                        reviewTextContent = lines.filter(line => !line.startsWith('Rating:')).join('\n');
+                    }
+                    
+                    ratingDisplay.textContent = `Score: ${rating}/10`;
+                    reviewText.innerHTML = reviewTextContent.trim().replace(/\n/g, '<br>');
+                    reviewContainer.classList.remove('hidden');
+                    updateStatus('Interview complete. Review ready.', false);
+                } else {
+                    throw new Error("Failed to get review from API.");
+                }
+            } catch (error) {
+                console.error("Error getting interview review:", error);
+                alert(`Error: ${error.message}`);
+                updateStatus('An error occurred while generating the review.', false);
+            }
+        };
+
+        const startInterview = async () => {
+            jobRole = jobRoleInput.value.trim();
+            apiKey = apiKeyInput.value.trim();
+            if (!jobRole || !apiKey) {
+                alert("Please enter both a job role and your Gemini API key to start the interview.");
+                return;
+            }
+
+            textApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${currentTextModel}:generateContent?key=${apiKey}`;
+            ttsApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
+
+
+            loadingModal.classList.remove('hidden');
+            
+            try {
+                await getMedia();
+                setupSection.classList.add('hidden');
+                interviewSection.classList.remove('hidden');
+                stopBtn.classList.remove('hidden');
+                transcriptContainer.innerHTML = '';
+                reviewContainer.classList.add('hidden');
+                interviewHistory = [];
+                interviewStarted = true;
+                interviewStartTime = Date.now();
+                timerDisplay.classList.remove('hidden');
+                timerInterval = setInterval(updateTimerDisplay, 1000);
+                
+                await askQuestion();
+            } catch (error) {
+                console.error("Error during interview setup:", error);
+                loadingModal.classList.add('hidden');
+                setupSection.classList.remove('hidden');
+                alert(`Failed to start the interview. ${error.message}`);
+            } finally {
+                loadingModal.classList.add('hidden');
+            }
+        };
+        
+        const stopInterview = () => {
+            interviewStarted = false;
+            if (speechRecognition) speechRecognition.stop();
+            if (webcamVideo.srcObject) {
+                webcamVideo.srcObject.getTracks().forEach(track => track.stop());
+            }
+            clearInterval(timerInterval);
+            timerDisplay.classList.add('hidden');
+            stopBtn.classList.add('hidden');
+            setupSection.classList.remove('hidden');
+            interviewSection.classList.add('hidden');
+            updateStatus('Ready.', false);
+        };
+
+        // --- Event Listeners ---
+        startBtn.addEventListener('click', startInterview);
+        stopBtn.addEventListener('click', stopInterview);
+
+        // --- Initialization on page load ---
+        const init = async () => {
+            const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+            const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+            if (Object.keys(firebaseConfig).length > 0) {
+                try {
+                    app = initializeApp(firebaseConfig);
+                    auth = getAuth(app);
+                    
+                    onAuthStateChanged(auth, async (user) => {
+                        if (user) {
+                            userId = user.uid;
+                        } else {
+                            if (initialAuthToken) {
+                                await signInWithCustomToken(auth, initialAuthToken);
+                                userId = auth.currentUser?.uid;
+                            } else {
+                                await signInAnonymously(auth);
+                                userId = auth.currentUser?.uid || crypto.randomUUID();
+                            }
+                        }
+                        userIdSpan.textContent = userId;
+                        console.log("Firebase initialized. User ID:", userId);
+                    });
+                } catch (error) {
+                    console.error("Firebase initialization failed:", error);
+                    userId = crypto.randomUUID();
+                    userIdSpan.textContent = userId;
+                }
+            } else {
+                console.log("No Firebase config found. Running without auth.");
+                userId = crypto.randomUUID();
+                userIdSpan.textContent = userId;
+            }
+            updateStatus('Ready.');
+        };
+
+        window.onload = init;
+    </script>
+</body>
+</html>
