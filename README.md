@@ -59,7 +59,7 @@ Backend integration for storing history
 
 ---
 
-## 📬 Contact
+📬 Contact
 
 Tharshan
 GitHub: (https://github.com/tharshanr81)
