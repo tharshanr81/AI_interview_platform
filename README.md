@@ -61,6 +61,6 @@ Backend integration for storing history
 
 ## 📬 Contact
 
-**Tharshan**
+Tharshan
 GitHub: (https://github.com/tharshanr81)
-Email: tharshanr7878@gmail.com(mailto:tharshanr7878@gmail.com)
+Email: tharshanr7878@gmail.com
